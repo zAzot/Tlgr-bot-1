@@ -1,0 +1,14 @@
+Даний документ є шаблоном для ствоерння файла bot.config або його аналогів з іншою назвою 
+
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+	<appSettings>
+		<add key="Token" value="" />
+		<add key="ApiId" value="" />
+		<add key="ApiHash" value="" />
+		<add key="PhoneNumber" value="" />
+		<add key="TargetChats" value="" />
+		<add key="SearchPatterns" value="" />
+		<add key="MessagePatterns" value='{ }' />
+	</appSettings>
+</configuration>
