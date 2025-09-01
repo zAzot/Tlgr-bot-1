@@ -11,18 +11,25 @@ import sys
 from typing import Dict, Any, Optional
 from contextlib import asynccontextmanager
 import json
+import os
+import signal
 
 from config_reader import ConfigReader
 from bot_1 import Bot_1
 
+# Налаштування логера без конфліктів імен
+logger = logging.getLogger(__name__)
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
-logger = logging.getLogger(__name__)
 
 decrypted_config_data = None
 config_received_event = asyncio.Event()
+
+def is_render_platform():
+    """Перевірка чи працюємо на Render.com"""
+    return bool(os.environ.get('RENDER', False))
 
 def validate_key(key: str) -> bytes:
     """Validate and prepare the encryption key."""
@@ -134,20 +141,35 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 def restart_bot():
-    """Перезапуск бота"""
+    """Безпечний перезапуск бота"""
     try:
-        python_executable = sys.executable
-        script_path = sys.argv[0]
-        subprocess.Popen([python_executable, script_path])
-        sys.exit(0)
+        if is_render_platform():
+            # Для Render.com - просто завершуємо процес
+            logger.info("Render platform detected - performing simple restart")
+            os._exit(0)
+        else:
+            # Для локального середовища - повний перезапуск
+            python_executable = sys.executable
+            script_path = sys.argv[0]
+            subprocess.Popen(
+                [python_executable, script_path],
+                start_new_session=True
+            )
+            # Зупиняємо поточний процес
+            os._exit(0)
+            
     except Exception as e:
         logger.error(f"Failed to restart bot: {str(e)}")
-        raise
+        # Аварійне завершення у разі помилки
+        os._exit(1)
 
 async def perform_restart():
     """Perform server restart asynchronously"""
-    await asyncio.sleep(1)  # Даємо час для відправки відповіді
-    restart_bot()
+    await asyncio.sleep(2)  # Даємо час для відправки відповіді
+    
+    # Виконуємо перезапуск в окремому потоці
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, restart_bot)
 
 def update_config(new_config_data: str) -> bool:
     """Оновлення конфігураційного файлу"""
@@ -247,6 +269,7 @@ async def server_status_encrypted(request: Request):
         response_data = {
             "status": "OK",
             "server_time": asyncio.get_event_loop().time(),
+            "platform": "render" if is_render_platform() else "local",
             "endpoints": ["/status", "/full-restart", "/receive-encrypted", "/update-config", "/restore-config", "/get-config", "/get-config-info"]
         }
         
@@ -283,6 +306,7 @@ async def full_restart_encrypted(request: Request):
         response_data = {
             "status": "restarting",
             "message": "Server is restarting",
+            "platform": "render" if is_render_platform() else "local",
             "timestamp": asyncio.get_event_loop().time()
         }
         
