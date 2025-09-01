@@ -1,6 +1,6 @@
-cryptography
-fastapi
-telegram
-telegram_module
-telethon
-uvicorn
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+cryptography==41.0.7
+python-telegram-bot==20.7  # Додати цей рядок
+python-multipart==0.0.6
+aiofiles==23.2.1
