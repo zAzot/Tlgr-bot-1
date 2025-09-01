@@ -131,7 +131,7 @@ class Bot_1:
                 try:
                     await app.bot.send_message(
                         chat_id=self.admin_chat_id,
-                        text=f"🟢 Бот запущений. Повідомлення про запуск відправлено:\n✅ Успішно: {success_count}\n❌ Невдало: {fail_count}\n👥 Всього користувачів: {len(users_db['users'])}"
+                        text=f"Бот запущений. Повідомлення про запуск відправлено:\n Успішно: {success_count}\n Невдало: {fail_count}\n Всього користувачів: {len(users_db['users'])}"
                     )
                 except Exception as e:
                     logger.error(f"Помилка при відправці звіту адміну: {str(e)}")
@@ -254,18 +254,18 @@ class Bot_1:
                 found_patterns, notification_message = self.analyze_message_with_patterns(current_message)
                 
                 print("\n" + "="*50)
-                print(f"🔍 Нове повідомлення з каналу (довжина: {len(current_message)} символів):")
+                print(f" Нове повідомлення з каналу (довжина: {len(current_message)} символів):")
                 print("-"*50)
                 print(current_message[:500] + ("..." if len(current_message) > 500 else ""))
                 print("-"*50)
                 
                 if found_patterns:
-                    print(f"✅ Знайдені патерни: {', '.join(found_patterns)}")
+                    print(f" Знайдені патерни: {', '.join(found_patterns)}")
                     if notification_message:
                         # Надсилаємо сповіщення користувачам
                         await self.send_notification_to_users(app, notification_message)
                 else:
-                    print("❌ Патерни не знайдені")
+                    print(" Патерни не знайдені")
                 print("="*50 + "\n")
                 
                 await asyncio.sleep(60)
