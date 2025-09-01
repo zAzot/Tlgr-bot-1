@@ -69,13 +69,13 @@ class Bot_1:
         user_id = update.effective_user.id
         self.user_notifications[user_id] = True
         self.add_user_to_db(user_id)
-        await update.message.reply_text("🔔 Сповіщення увімкнено!")
+        await update.message.reply_text("Сповіщення увімкнено!")
     
     async def turn_off(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
         self.user_notifications[user_id] = False
         self.add_user_to_db(user_id)
-        await update.message.reply_text("🔕 Сповіщення вимкнено!")
+        await update.message.reply_text("Сповіщення вимкнено!")
     
     async def status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Endpoint to check if server is running"""
@@ -103,7 +103,7 @@ class Bot_1:
                 try:
                     await app.bot.send_message(
                         chat_id=user_id,
-                        text="🟢 Бот був перезапущений. Система працює у штатному режимі!"
+                        text="Бот був перезапущений. Система працює у штатному режимі!"
                     )
                     success_count += 1
                     logger.info(f"Повідомлення про запуск відправлено до {user_id}")

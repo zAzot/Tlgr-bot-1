@@ -338,14 +338,7 @@ async def receive_encrypted_data(request: Request):
         
         if not isinstance(decrypted_data, dict):
             raise ValueError("Expected a dictionary with encrypted data")
-        
-        # Виводимо дешифровані дані в термінал
-        print("\n" + "="*50)
-        print("Decrypted Data Received:")
-        for key, value in decrypted_data.items():
-            print(f"{key}: {value}")
-        print("="*50 + "\n")
-        
+             
         # Зберігаємо дешифровані дані та сигналізуємо про отримання
         decrypted_config_data = decrypted_data
         config_received_event.set()
