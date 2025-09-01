@@ -1,6 +1,5 @@
 cryptography
 fastapi
 telegram
-telegram_module
 telethon
 uvicorn
