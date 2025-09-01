@@ -26,6 +26,7 @@ logging.basicConfig(
 
 decrypted_config_data = None
 config_received_event = asyncio.Event()
+bot_task = None
 
 def is_render_platform():
     """Перевірка чи працюємо на Render.com"""
@@ -137,6 +138,13 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
     logger.info("Сервер зупиняється...")
+    # Зупиняємо бота при завершенні роботи сервера
+    if bot_task and not bot_task.done():
+        bot_task.cancel()
+        try:
+            await bot_task
+        except asyncio.CancelledError:
+            logger.info("Бот зупинений")
 
 app = FastAPI(lifespan=lifespan)
 
@@ -270,7 +278,8 @@ async def server_status_encrypted(request: Request):
             "status": "OK",
             "server_time": asyncio.get_event_loop().time(),
             "platform": "render" if is_render_platform() else "local",
-            "endpoints": ["/status", "/full-restart", "/receive-encrypted", "/update-config", "/restore-config", "/get-config", "/get-config-info"]
+            "endpoints": ["/status", "/full-restart", "/receive-encrypted", "/update-config", "/restore-config", "/get-config", "/get-config-info"],
+            "bot_running": bot_task is not None and not bot_task.done()
         }
         
         # Шифруємо всю відповідь
@@ -327,7 +336,7 @@ async def full_restart_encrypted(request: Request):
 @app.post("/receive-encrypted")
 async def receive_encrypted_data(request: Request):
     """Endpoint to receive and decrypt encrypted data (fully encrypted)"""
-    global decrypted_config_data
+    global decrypted_config_data, bot_task
     
     try:
         encryption_key = await get_encryption_key()
@@ -343,8 +352,12 @@ async def receive_encrypted_data(request: Request):
         decrypted_config_data = decrypted_data
         config_received_event.set()
         
+        # Запускаємо бота в окремому потоці, не зупиняючи сервер
+        if bot_task is None or bot_task.done():
+            bot_task = asyncio.create_task(start_bot_with_config())
+        
         # Шифруємо всю відповідь
-        response_data = {"status": "success", "message": "Data received successfully"}
+        response_data = {"status": "success", "message": "Data received successfully, bot starting"}
         encrypted_response = encrypt_data(response_data, encryption_key)
         
         return encrypted_response
@@ -506,6 +519,32 @@ async def run_bot_with_config(config_data: dict):
         logger.error(f"Помилка при запуску бота: {str(e)}")
         raise
 
+async def start_bot_with_config():
+    """Запуск бота з отриманою конфігурацією"""
+    global decrypted_config_data
+    
+    try:
+        if decrypted_config_data is None:
+            logger.error("Не отримано дешифровані дані для запуску бота")
+            return
+        
+        logger.info("Дешифровані дані отримані. Завантаження конфігурації з файлу...")
+        
+        # Отримуємо решту конфігурації з файлу
+        config_reader = ConfigReader()
+        file_config_data = config_reader.get_config_dict()
+        
+        # Об'єднуємо дешифровані дані з файловими даними
+        final_config_data = {**file_config_data, **decrypted_config_data}
+        
+        logger.info("Конфігурація завантажена. Запуск бота...")
+        
+        # Запускаємо бота з об'єднаною конфігурацією
+        await run_bot_with_config(final_config_data)
+        
+    except Exception as e:
+        logger.error(f"Помилка при запуску бота: {str(e)}")
+
 async def start_server():
     """Запуск сервера FastAPI"""
     config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="info")
@@ -513,8 +552,8 @@ async def start_server():
     await server.serve()
 
 async def main():
-    """Головна функція, яка запускає сервер та очікує дешифровані дані"""
-    global decrypted_config_data
+    """Головна функція, яка запускає сервер"""
+    global bot_task
     
     try:
         # Додаткова перевірка encryption_key перед запуском сервера
@@ -528,47 +567,17 @@ async def main():
                 logger.error("Не вдалося відновити стару конфігурацію. Завершення роботи.")
                 return
         
-        # Запускаємо сервер у фоновому режимі
-        server_task = asyncio.create_task(start_server())
-        
+        # Запускаємо сервер
         logger.info("Сервер запущений на порту 8000. Очікування дешифрованих даних...")
-        
-        # Очікуємо отримання дешифрованих даних
-        await config_received_event.wait()
-        
-        if decrypted_config_data is None:
-            raise ValueError("Не отримано дешифровані дані")
-        
-        logger.info("Дешифровані дані отримані. Завантаження конфігурації з файлу...")
-        
-        # Отримуємо решту конфігурації з файлу
-        config_reader = ConfigReader()
-        file_config_data = config_reader.get_config_dict()
-        
-        # Об'єднуємо дешифровані дані з файловими даними
-        final_config_data = {**file_config_data, **decrypted_config_data}
-        
-        logger.info("Конфігурація завантажена. Запуск бота...")
-        
-        # Зупиняємо сервер перед запуском бота
-        server_task.cancel()
-        try:
-            await server_task
-        except asyncio.CancelledError:
-            logger.info("Сервер зупинено")
-        
-        # Запускаємо бота з об'єднаною конфігурацією
-        await run_bot_with_config(final_config_data)
+        await start_server()
         
     except asyncio.CancelledError:
         logger.info("Робота перервана")
     except Exception as e:
         logger.error(f"Помилка при запуску програми: {str(e)}")
-        # Гарантуємо зупинку сервера при помилці
-        if 'server_task' in locals():
-            server_task.cancel()
     finally:
         logger.info("Програма завершена")
+
 
 if __name__ == "__main__":
     try:

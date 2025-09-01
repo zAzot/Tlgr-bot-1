@@ -7,7 +7,7 @@ import os
 import re
 from pathlib import Path
 
-from telegram_module import get_last_channel_message
+from telegram_module import get_messages_from_all_channels, get_last_channel_message
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +21,8 @@ class Bot_1:
         self.admin_chat_id = config_data.get('AdminChatId')
         self.user_notifications = {}
         self.application = None
+        self.previous_messages = {}  # Зберігаємо останні повідомлення для кожного каналу
+        self.channel_names = {}  # Можна додати імена каналів для кращого логування
     
     def load_users_db(self):
         if os.path.exists(USERS_DB_FILE):
@@ -55,7 +57,7 @@ class Bot_1:
                     logger.info(f"Повідомлення відправлено до {user_id}")
                 except Exception as e:
                     fail_count += 1
-                    logger.warning(f"Не вдалося відправити повідomлення до {user_id}: {str(e)}")
+                    logger.warning(f"Не вдалося відправити повідомлення до {user_id}: {str(e)}")
                     if "Chat not found" in str(e) or "bot was blocked" in str(e).lower():
                         # Видаляємо користувача з бази, якщо чат не знайдено або бот заблокований
                         if user_id in users_db["users"]:
@@ -80,6 +82,25 @@ class Bot_1:
     async def status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Endpoint to check if server is running"""
         await update.message.reply_text("Бот був перезапущений. Система працює у штатному режимі!")
+    
+    async def channels(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показати список відстежуваних каналів"""
+        try:
+            target_chats = self.config_data.get('TargetChats', '')
+            if not target_chats:
+                await update.message.reply_text("Список каналів порожній")
+                return
+            
+            channel_ids = [id_str.strip() for id_str in target_chats.split(',') if id_str.strip()]
+            response = "Відстежувані канали:\n\n"
+            
+            for i, channel_id in enumerate(channel_ids, 1):
+                response += f"{i}. Канал ID: {channel_id}\n"
+            
+            await update.message.reply_text(response)
+            
+        except Exception as e:
+            await update.message.reply_text(f"Помилка при отриманні списку каналів: {str(e)}")
     
     async def echo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
@@ -129,9 +150,17 @@ class Bot_1:
             # Відправляємо звіт адміну, якщо вказано в конфігурації
             if self.admin_chat_id:
                 try:
+                    target_chats = self.config_data.get('TargetChats', '')
+                    channel_count = len([id_str.strip() for id_str in target_chats.split(',') if id_str.strip()])
+                    
                     await app.bot.send_message(
                         chat_id=self.admin_chat_id,
-                        text=f"Бот запущений. Повідомлення про запуск відправлено:\n Успішно: {success_count}\n Невдало: {fail_count}\n Всього користувачів: {len(users_db['users'])}"
+                        text=f"Бот запущений\n\n"
+                             f"Статистика запуску:\n"
+                             f"•Користувачів: {len(users_db['users'])}\n"
+                             f"•Відправлено: {success_count}\n"
+                             f"•Невдало: {fail_count}\n"
+                             f"•Каналів: {channel_count}"
                     )
                 except Exception as e:
                     logger.error(f"Помилка при відправці звіту адміну: {str(e)}")
@@ -139,7 +168,7 @@ class Bot_1:
         except Exception as e:
             logger.error(f"Критична помилка при відправці повідомлень про запуск: {str(e)}")
     
-    def analyze_message_with_patterns(self, message_text):
+    def analyze_message_with_patterns(self, message_text, channel_id=None):
         """
         Аналізує повідомлення за заданими патернами
         Повертає список знайдених відповідностей та відповідне повідомлення
@@ -151,6 +180,9 @@ class Bot_1:
         notification_message = None
         
         try:
+            # Додаємо інформацію про канал до повідомлення
+            channel_info = f" (канал {channel_id})" if channel_id else ""
+            
             # Перевірка для any_of (будь-яке зі слів)
             if 'any_of' in self.message_patterns:
                 pattern_config = self.message_patterns['any_of']
@@ -167,7 +199,8 @@ class Bot_1:
                         message_template = pattern_config.get('message', 'Знайдено слова: {found_words}')
                         notification_message = message_template.format(
                             found_words=', '.join(found_words),
-                            message_preview=message_text[:300] + ('...' if len(message_text) > 300 else '')
+                            message_preview=message_text[:300] + ('...' if len(message_text) > 300 else ''),
+                            channel_info=channel_info
                         )
             
             # Перевірка для all_of (всі слова)
@@ -189,7 +222,8 @@ class Bot_1:
                         message_template = pattern_config.get('message', 'Знайдено всі слова: {found_words}')
                         notification_message = message_template.format(
                             found_words=', '.join(found_words),
-                            message_preview=message_text[:300] + ('...' if len(message_text) > 300 else '')
+                            message_preview=message_text[:300] + ('...' if len(message_text) > 300 else ''),
+                            channel_info=channel_info
                         )
             
             # Перевірка для none_of (жодного зі слів)
@@ -210,7 +244,8 @@ class Bot_1:
                         message_template = pattern_config.get('message', 'Уникнуто слів: {avoided_words}')
                         notification_message = message_template.format(
                             avoided_words=', '.join(keywords),
-                            message_preview=message_text[:300] + ('...' if len(message_text) > 300 else '')
+                            message_preview=message_text[:300] + ('...' if len(message_text) > 300 else ''),
+                            channel_info=channel_info
                         )
         
         except Exception as e:
@@ -219,8 +254,7 @@ class Bot_1:
         return results, notification_message
     
     async def check_channel_messages(self):
-        """Періодична перевірка каналу та аналіз повідомлень за патернами"""
-        previous_message = None
+        """Періодична перевірка всіх каналів та аналіз повідомлень за патернами"""
         app = None
         
         try:
@@ -231,48 +265,72 @@ class Bot_1:
             logger.error(f"Помилка при ініціалізації app для check_channel_messages: {str(e)}")
             return
         
+        check_interval = 300  # 5 хвилин між перевірками за замовчуванням
+        
         while True:
             try:
-                # Використовуємо config_data замість завантаження з файлу
-                current_result = await get_last_channel_message(self.config_data)
+                # Отримуємо повідомлення з усіх каналів
+                result = await get_messages_from_all_channels(self.config_data)
                 
-                if not current_result['success']:
-                    logger.error(f"Помилка отримання повідомлення: {current_result.get('error', 'Невідома помилка')}")
-                    await asyncio.sleep(300)
+                if not result['success']:
+                    logger.error(f"Помилка отримання повідомлень: {result.get('error', 'Невідома помилка')}")
+                    await asyncio.sleep(check_interval)
                     continue
+                
+                successful_channels = result.get('successful_channels', 0)
+                total_channels = result.get('total_channels', 0)
+                
+                logger.info(f"Перевірено канали: {successful_channels}/{total_channels} успішно")
+                
+                # Обробляємо кожен канал
+                for channel_result in result['results']:
+                    if not channel_result['success']:
+                        logger.error(f"Помилка в каналі {channel_result.get('channel_id', 'невідомо')}: {channel_result.get('error')}")
+                        continue
                     
-                current_message = current_result['message']
-                
-                if previous_message is not None and current_message == previous_message:
-                    logger.info("Повідомлення не змінилось, пропускаємо обробку")
-                    await asyncio.sleep(300)
-                    continue
+                    channel_id = channel_result['channel_id']
+                    current_message = channel_result['message']
                     
-                previous_message = current_message
+                    # Пропускаємо порожні повідомлення
+                    if current_message == "[Канал порожній]":
+                        continue
+                    
+                    # Перевіряємо, чи змінилося повідомлення в цьому каналі
+                    previous_message = self.previous_messages.get(channel_id)
+                    
+                    if previous_message is not None and current_message == previous_message:
+                        logger.debug(f"Повідомлення в каналі {channel_id} не змінилось, пропускаємо обробку")
+                        continue
+                    
+                    # Оновлюємо останнє повідомлення для цього каналу
+                    self.previous_messages[channel_id] = current_message
+                    
+                    # Аналізуємо повідомлення за патернами
+                    found_patterns, notification_message = self.analyze_message_with_patterns(current_message, channel_id)
+                    
+                    print("\n" + "="*60)
+                    print(f"Новий пост з каналу {channel_id} (довжина: {len(current_message)} символів):")
+                    print("-"*60)
+                    print(current_message[:500] + ("..." if len(current_message) > 500 else ""))
+                    print("-"*60)
+                    
+                    if found_patterns:
+                        print(f"Знайдені патерни: {', '.join(found_patterns)}")
+                        if notification_message:
+                            # Надсилаємо сповіщення користувачам
+                            success_count, fail_count = await self.send_notification_to_users(app, notification_message)
+                            print(f" Відправлено сповіщень: {success_count} успішно, {fail_count} невдало")
+                    else:
+                        print("Патерни не знайдені")
+                    print("="*60 + "\n")
                 
-                # Аналізуємо повідомлення за патернами
-                found_patterns, notification_message = self.analyze_message_with_patterns(current_message)
-                
-                print("\n" + "="*50)
-                print(f" Нове повідомлення з каналу (довжина: {len(current_message)} символів):")
-                print("-"*50)
-                print(current_message[:500] + ("..." if len(current_message) > 500 else ""))
-                print("-"*50)
-                
-                if found_patterns:
-                    print(f" Знайдені патерни: {', '.join(found_patterns)}")
-                    if notification_message:
-                        # Надсилаємо сповіщення користувачам
-                        await self.send_notification_to_users(app, notification_message)
-                else:
-                    print(" Патерни не знайдені")
-                print("="*50 + "\n")
-                
-                await asyncio.sleep(60)
+                # Збільшуємо інтервал перевірки після кожної ітерації
+                await asyncio.sleep(check_interval)
                 
             except Exception as e:
-                logger.error(f"Помилка при перевірці каналу: {str(e)}")
-                await asyncio.sleep(60)
+                logger.error(f"Помилка при перевірці каналів: {str(e)}")
+                # Збільшуємо інтервал при помилках
+                await asyncio.sleep(check_interval * 2)
     
     async def run(self):
         """Запуск бота"""
@@ -282,6 +340,7 @@ class Bot_1:
             self.application.add_handler(CommandHandler("on", self.turn_on))
             self.application.add_handler(CommandHandler("off", self.turn_off))
             self.application.add_handler(CommandHandler("status", self.status))
+            self.application.add_handler(CommandHandler("channels", self.channels))
             self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.echo))
 
             logger.info("Бот запускається...")
@@ -289,9 +348,10 @@ class Bot_1:
             await self.application.initialize()
             await self.application.start()
             
-            # Відправляємо повідomлення про запуск ВСІМ користувачам (незалежно від налаштувань сповіщень)
+            # Відправляємо повідомлення про запуск ВСІМ користувачам
             await self.send_startup_message(self.application)
             
+            # Запускаємо перевірку каналів
             asyncio.create_task(self.check_channel_messages())
             
             logger.info("Бот успішно запущений. Очікування повідомлень...")
