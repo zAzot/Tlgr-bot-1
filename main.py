@@ -246,6 +246,15 @@ def get_config_info():
     except Exception as e:
         return {"error": f"Failed to get config info: {str(e)}"}
 
+@app.get("/health")
+async def health_check():
+    """Ендпоінт для швидкої перевірки стану сервера"""
+    return {
+        "status": "healthy",
+        "server_time": asyncio.get_event_loop().time(),
+        "bot_running": bot_task is not None and not bot_task.done()
+    }
+
 @app.post("/status")
 async def server_status_encrypted(request: Request):
     """Ендпоінт для перевірки статусу сервера (повністю шифрований)"""
@@ -263,8 +272,9 @@ async def server_status_encrypted(request: Request):
             "status": "OK",
             "server_time": asyncio.get_event_loop().time(),
             "platform": "render" if is_render_platform() else "local",
-            "endpoints": ["/status", "/full-restart", "/receive-encrypted", "/update-config", "/restore-config", "/get-config", "/get-config-info"],
-            "bot_running": bot_task is not None and not bot_task.done()
+            "endpoints": ["/status", "/health", "/full-restart", "/receive-encrypted", "/update-config", "/restore-config", "/get-config", "/get-config-info"],
+            "bot_running": bot_task is not None and not bot_task.done(),
+            "bot_status": "on" if (bot_task is not None and not bot_task.done()) else "off"
         }
         
         # Шифруємо всю відповідь
