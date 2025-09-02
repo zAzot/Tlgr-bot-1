@@ -17,7 +17,6 @@ import signal
 from config_reader import ConfigReader
 from bot_1 import Bot_1
 
-# Налаштування логера без конфліктів імен
 logger = logging.getLogger(__name__)
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -67,10 +66,8 @@ def decrypt_data(encrypted_data: str, encryption_key: str) -> Any:
     try:
         fernet = get_fernet_instance(encryption_key)
         
-        # Decrypt the data
         decrypted_bytes = fernet.decrypt(encrypted_data.encode())
         
-        # Parse JSON back to Python object
         return json.loads(decrypted_bytes.decode())
             
     except InvalidToken:
@@ -96,18 +93,15 @@ def check_encryption_key() -> bool:
         config_reader = ConfigReader()
         config_data = config_reader.get_config_dict()
         
-        # Перевірка наявності ключа
         if 'encryption_key' not in config_data:
             logger.warning("encryption_key відсутній у конфігураційному файлі")
             return False
         
-        # Перевірка що ключ не пустий
         encryption_key = config_data['encryption_key']
         if not encryption_key or encryption_key.strip() == '':
             logger.warning("encryption_key пустий у конфігураційному файлі")
             return False
         
-        # Спроба створити Fernet instance для валідації ключа
         try:
             get_fernet_instance(encryption_key)
             logger.info("encryption_key валідний")
@@ -123,10 +117,8 @@ def check_encryption_key() -> bool:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan manager for FastAPI app"""
-    # Startup
     logger.info("Сервер запускається...")
     
-    # Перевірка encryption_key перед запуском
     if not check_encryption_key():
         logger.error("Невалідний encryption_key. Відновлення старої конфігурації...")
         if restore_old_config():
@@ -136,9 +128,7 @@ async def lifespan(app: FastAPI):
             logger.error("Не вдалося відновити стару конфігурацію")
     
     yield
-    # Shutdown
     logger.info("Сервер зупиняється...")
-    # Зупиняємо бота при завершенні роботи сервера
     if bot_task and not bot_task.done():
         bot_task.cancel()
         try:
@@ -152,30 +142,25 @@ def restart_bot():
     """Безпечний перезапуск бота"""
     try:
         if is_render_platform():
-            # Для Render.com - просто завершуємо процес
             logger.info("Render platform detected - performing simple restart")
             os._exit(0)
         else:
-            # Для локального середовища - повний перезапуск
             python_executable = sys.executable
             script_path = sys.argv[0]
             subprocess.Popen(
                 [python_executable, script_path],
                 start_new_session=True
             )
-            # Зупиняємо поточний процес
             os._exit(0)
             
     except Exception as e:
         logger.error(f"Failed to restart bot: {str(e)}")
-        # Аварійне завершення у разі помилки
         os._exit(1)
 
 async def perform_restart():
     """Perform server restart asynchronously"""
-    await asyncio.sleep(2)  # Даємо час для відправки відповіді
+    await asyncio.sleep(2) 
     
-    # Виконуємо перезапуск в окремому потоці
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, restart_bot)
 

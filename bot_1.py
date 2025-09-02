@@ -21,8 +21,8 @@ class Bot_1:
         self.admin_chat_id = config_data.get('AdminChatId')
         self.user_notifications = {}
         self.application = None
-        self.previous_messages = {}  # Зберігаємо останні повідомлення для кожного каналу
-        self.channel_names = {}  # Можна додати імена каналів для кращого логування
+        self.previous_messages = {}
+        self.channel_names = {}
     
     def load_users_db(self):
         if os.path.exists(USERS_DB_FILE):
@@ -47,7 +47,7 @@ class Bot_1:
         fail_count = 0
         
         for user_id in users_db["users"]:
-            if self.user_notifications.get(user_id, True):  # Якщо сповіщення увімкнені
+            if self.user_notifications.get(user_id, True):
                 try:
                     await app.bot.send_message(
                         chat_id=user_id,
@@ -59,7 +59,6 @@ class Bot_1:
                     fail_count += 1
                     logger.warning(f"Не вдалося відправити повідомлення до {user_id}: {str(e)}")
                     if "Chat not found" in str(e) or "bot was blocked" in str(e).lower():
-                        # Видаляємо користувача з бази, якщо чат не знайдено або бот заблокований
                         if user_id in users_db["users"]:
                             users_db["users"].remove(user_id)
                             self.save_users_db(users_db)
@@ -348,10 +347,8 @@ class Bot_1:
             await self.application.initialize()
             await self.application.start()
             
-            # Відправляємо повідомлення про запуск ВСІМ користувачам
             await self.send_startup_message(self.application)
             
-            # Запускаємо перевірку каналів
             asyncio.create_task(self.check_channel_messages())
             
             logger.info("Бот успішно запущений. Очікування повідомлень...")
